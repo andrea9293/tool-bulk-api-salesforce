@@ -1,5 +1,7 @@
 # Salesforce Bulk API Tool (Parallel Bulk Delete) 🚀✨
 
+![Salesforce Bulk Delete Tool](img_readme.jpg)
+
 This project provides a tool to perform parallel bulk deletions on Salesforce objects via the Bulk API 2.0. Use it to remove large amounts of records quickly and efficiently with multi-threading capabilities! ⚡
 
 ## Requirements
