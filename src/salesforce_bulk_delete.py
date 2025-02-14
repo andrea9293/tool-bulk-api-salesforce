@@ -4,9 +4,10 @@ import time
 import logging
 from simple_salesforce import Salesforce
 import pandas as pd
-from typing import Optional
+from typing import Optional, Dict, List
+import concurrent.futures
 
-# Basic logging configuration to write to bulk_delete.log
+# Configurazione base del logging per scrivere su bulk_delete.log
 logging.basicConfig(
     filename='bulk_delete.log',
     level=logging.INFO,
@@ -21,8 +22,8 @@ class SalesforceBulkDelete:
         security_token: str,
         domain: Optional[str] = 'login'
     ):
-        print("=== Initializing SalesforceBulkDelete ===")
-        logging.info("Initializing SalesforceBulkDelete")
+        print("=== Inizializzazione SalesforceBulkDelete ===")
+        logging.info("=== Inizializzazione SalesforceBulkDelete ===")
 
         self.sf = Salesforce(
             username=username,
@@ -30,8 +31,8 @@ class SalesforceBulkDelete:
             security_token=security_token,
             domain=domain
         )
-        print(f"Connected to Salesforce: {self.sf.base_url}")
-        logging.info(f"Connected to Salesforce: {self.sf.base_url}")
+        print(f"Connesso a Salesforce: {self.sf.base_url}")
+        logging.info(f"=== Connesso a Salesforce: {self.sf.base_url} ===")
 
         self.instance_url = self.sf.base_url
         self.headers = {
@@ -40,11 +41,7 @@ class SalesforceBulkDelete:
         }
         
     def create_delete_job(self, sobject_name: str) -> str:
-        print("\n=== Creating new deletion job ===")
-        logging.info("Creating new deletion job")
         endpoint = f"{self.instance_url}jobs/ingest"
-        print(f"Endpoint used: {endpoint}")
-        logging.info(f"Endpoint used for job creation: {endpoint}")
         
         body = {
             "operation": "delete",
@@ -54,65 +51,52 @@ class SalesforceBulkDelete:
         }
         
         response = requests.post(endpoint, headers=self.headers, json=body)
-        print(f"Deletion job creation response: {response.status_code}")
-        logging.info(f"Deletion job creation response: {response.status_code}")
         response.raise_for_status()
         job_id = response.json()['id']
-        logging.info(f"Job ID created: {job_id}")
+        logging.info(f"=== Creazione nuovo job di cancellazione: Risposta creazione job: {response.status_code} - Job ID creato: {job_id}")
+        print(f"=== Creazione nuovo job di cancellazione: Risposta creazione job: {response.status_code} - Job ID creato: {job_id}")
         return job_id
     
     def upload_data_for_deletion(self, job_id: str, ids_to_delete: list) -> None:
-        print(f"\n=== Uploading data for job {job_id} ===")
-        logging.info(f"Uploading data for job {job_id}")
-        print(f"Number of records to delete: {len(ids_to_delete)}")
-        logging.info(f"Number of records to delete for job {job_id}: {len(ids_to_delete)}")
+        print(f"\n=== Caricamento dati per job {job_id}: Numero di record da cancellare: {len(ids_to_delete)}")
+        logging.info(f"=== Caricamento dati per job {job_id}: Numero di record da cancellare: {len(ids_to_delete)}")
 
         endpoint = f"{self.instance_url}jobs/ingest/{job_id}/batches"
         
         csv_data = "Id\n" + "\n".join(ids_to_delete)
-        print("CSV data ready for upload")
-        logging.info("CSV data ready for upload")
         
         headers = self.headers.copy()
         headers['Content-Type'] = 'text/csv'
         
         response = requests.put(endpoint, headers=headers, data=csv_data)
-        print(f"Upload status: {response.status_code}")
-        logging.info(f"Upload status for job {job_id}: {response.status_code}")
+        print(f"Stato upload: {response.status_code}")
+        logging.info(f"Stato upload per job {job_id}: {response.status_code}")
         response.raise_for_status()
     
     def check_job_status(self, job_id: str) -> dict:
-        print(f"\n=== Checking job status {job_id} ===")
-        logging.info(f"Checking job status {job_id}")
         endpoint = f"{self.instance_url}jobs/ingest/{job_id}"
         
         response = requests.get(endpoint, headers=self.headers)
         status = response.json()
-        print(f"Current state: {status['state']}")
-        logging.info(f"Current state for job {job_id}: {status['state']}")
-        print(f"Records processed: {status.get('numberRecordsProcessed', 0)}")
-        logging.info(f"Records processed for job {job_id}: {status.get('numberRecordsProcessed', 0)}")
-        print(f"Records failed: {status.get('numberRecordsFailed', 0)}")
-        logging.info(f"Records failed for job {job_id}: {status.get('numberRecordsFailed', 0)}")
+        print(f"\n=== Controllo stato job {job_id}: stato {status['state']} - Record processati: {status.get('numberRecordsProcessed', 0)} - Record falliti: {status.get('numberRecordsFailed', 0)}")
+        logging.info(f"=== Controllo stato job {job_id}: stato {status['state']} - Record processati: {status.get('numberRecordsProcessed', 0)} - Record falliti: {status.get('numberRecordsFailed', 0)}")
         response.raise_for_status()
         return status
     
     def close_job(self, job_id: str) -> None:
-        print(f"\n=== Closing job {job_id} ===")
-        logging.info(f"Closing job {job_id}")
         endpoint = f"{self.instance_url}jobs/ingest/{job_id}"
         body = {"state": "UploadComplete"}
         
         response = requests.patch(endpoint, headers=self.headers, json=body)
-        print(f"Closing job status: {response.status_code}")
-        logging.info(f"Closing job status for {job_id}: {response.status_code}")
+        print(f"=== Chiusura job {job_id}: Stato chiusura job: {response.status_code}")
+        logging.info(f"=== Chiusura job {job_id}: Stato chiusura job: {response.status_code}")
         response.raise_for_status()
-    
-    def execute_bulk_delete(self, soql_query: str, object_name: str, batch_size: int = 10000) -> dict:
-        print("\n=== Starting bulk deletion operation ===")
-        logging.info("Starting bulk deletion operation")
-        print(f"SOQL Query: {soql_query}")
-        logging.info(f"SOQL Query: {soql_query}")
+
+    def execute_bulk_delete(self, soql_query: str, object_name: str, batch_size: int = 10000, max_workers: int = 5) -> dict:
+        print("\n=== Avvio operazione di cancellazione bulk in parallelo ===")
+        print(f"=== Query SOQL: {soql_query}")
+        logging.info(f"=== Avvio operazione di cancellazione bulk in parallelo ===")
+        logging.info(f"=== Query SOQL: {soql_query}")
         
         results = []
         query_result = self.sf.query_all(soql_query)
@@ -121,48 +105,45 @@ class SalesforceBulkDelete:
             results.append(record['Id'])
         
         total_records = len(results)
-        print(f"\nFound {total_records} records to delete")
-        logging.info(f"Found {total_records} records to delete")
+        print(f"\nTrovati {total_records} record da cancellare")
+        logging.info(f"Trovati {total_records} record da cancellare")
         
         batches = [results[i:i + batch_size] for i in range(0, len(results), batch_size)]
-        print(f"Number of batches created: {len(batches)}")
-        logging.info(f"Number of batches created: {len(batches)}")
+        print(f"Numero di batch creati: {len(batches)}")
+        logging.info(f"Numero di batch creati: {len(batches)}")
         
         final_results = {
             'total_records': total_records,
             'successful_deletes': 0,
             'failed_deletes': 0
         }
-        
-        for i, batch in enumerate(batches, 1):
-            print(f"\n=== Processing batch {i}/{len(batches)} ===")
-            logging.info(f"Processing batch {i}/{len(batches)}")
+
+        def process_batch(batch: List[str]) -> Dict:
             job_id = self.create_delete_job(object_name)
-            print(f"Assigned job ID: {job_id}")
-            logging.info(f"Assigned job ID for batch {i}: {job_id}")
-            
             self.upload_data_for_deletion(job_id, batch)
             self.close_job(job_id)
             
             while True:
                 status = self.check_job_status(job_id)
                 if status['state'] in ['JobComplete', 'Failed', 'Aborted']:
-                    final_results['successful_deletes'] += status.get('numberRecordsProcessed', 0)
-                    final_results['failed_deletes'] += status.get('numberRecordsFailed', 0)
-                    print(f"Batch {i} completed!")
-                    logging.info(f"Batch {i} completed: {status}")
-                    break
-                print("Waiting for job to complete...")
-                logging.info(f"Waiting for job {job_id} to complete...")
+                    return {
+                        'processed': status.get('numberRecordsProcessed', 0),
+                        'failed': status.get('numberRecordsFailed', 0)
+                    }
                 time.sleep(5)
-        
-        print("\n=== Final summary ===")
-        logging.info("Final summary of bulk deletion process")
-        print(f"Total records: {final_results['total_records']}")
-        logging.info(f"Total records: {final_results['total_records']}")
-        print(f"Successful deletions: {final_results['successful_deletes']}")
-        logging.info(f"Successful deletions: {final_results['successful_deletes']}")
-        print(f"Failed deletions: {final_results['failed_deletes']}")
-        logging.info(f"Failed deletions: {final_results['failed_deletes']}")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_batch = {executor.submit(process_batch, batch): batch for batch in batches}
+            
+            for future in concurrent.futures.as_completed(future_to_batch):
+                result = future.result()
+                final_results['successful_deletes'] += result['processed']
+                final_results['failed_deletes'] += result['failed']
+
+        print("\n=== Riepilogo finale ===")
+        print(f"Record totali: {final_results['total_records']}")
+        print(f"Cancellazioni riuscite: {final_results['successful_deletes']}")
+        print(f"Cancellazioni fallite: {final_results['failed_deletes']}")
+        logging.info(f"\n\n=== Riepilogo finale del processo di cancellazione bulk ===\nRecord totali: {final_results['total_records']}\nCancellazioni riuscite: {final_results['successful_deletes']}\nCancellazioni fallite: {final_results['failed_deletes']}")
         
         return final_results
