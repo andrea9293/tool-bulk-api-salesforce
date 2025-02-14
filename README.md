@@ -91,7 +91,7 @@ A log file named bulk_delete.log will be created, containing details of all para
 - Monitor Salesforce API usage when running multiple parallel jobs
 
 ## License 📝
-This project is distributed under the MIT License.  
-See: https://opensource.org/licenses/MIT  
+This project is distributed under the AGPLv3 License.  
+See: [AGPLv3 License](https://www.gnu.org/licenses/agpl-3.0.en.html)  
 
 Enjoy your Parallel Salesforce Bulk Deletions! 🎉
